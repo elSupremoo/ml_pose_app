@@ -4,6 +4,10 @@
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>This app uses the microphone to capture audio for pose detection or other features.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>This app uses the camera to detect body pose in real-time.</string>
 	<key>CFBundleDisplayName</key>
 	<string>Ml Pose App</string>
 	<key>CFBundleExecutable</key>

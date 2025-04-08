@@ -8,6 +8,7 @@ import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:google_mlkit_commons/google_mlkit_commons.dart';
+import 'dart:math' as math;
 
 late List<CameraDescription> _cameras;
 
@@ -47,6 +48,7 @@ class _LiveCameraViewState extends State<LiveCameraView> {
   late PoseDetector _poseDetector;
   bool _isDetecting = false;
   List<Pose> _poses = [];
+  Timer? _iosTimer;
 
   @override
   void initState() {
@@ -55,34 +57,60 @@ class _LiveCameraViewState extends State<LiveCameraView> {
   }
 
   Future<void> _initialize() async {
-    _controller = CameraController(_cameras[0], ResolutionPreset.medium);
+    final backCamera = _cameras.firstWhere(
+      (camera) => camera.lensDirection == CameraLensDirection.front,
+    );
+
+    _controller = CameraController(backCamera, ResolutionPreset.medium);
     await _controller.initialize();
+    await _controller.setFlashMode(FlashMode.off);
+
     _poseDetector = PoseDetector(
       options: PoseDetectorOptions(mode: PoseDetectionMode.stream),
     );
 
-    _controller.startImageStream((CameraImage image) async {
-      if (_isDetecting) return;
-      _isDetecting = true;
+    if (Platform.isIOS) {
+      _iosTimer = Timer.periodic(Duration(milliseconds: 20), (timer) async {
+        if (!_controller.value.isInitialized || _isDetecting) return;
+        _isDetecting = true;
 
-      final inputImage = _cameraImageToInputImage(
-        image,
-        _controller.description,
-      );
-      if (inputImage == null) {
+        try {
+          final file = await _controller.takePicture();
+          final inputImage = InputImage.fromFilePath(file.path);
+          final poses = await _poseDetector.processImage(inputImage);
+          setState(() => _poses = poses);
+          await File(file.path).delete();
+        } catch (e) {
+          debugPrint("iOS Pose detection error: $e");
+        }
+
         _isDetecting = false;
-        return;
-      }
+      });
+    } else {
+      _controller.startImageStream((CameraImage image) async {
+        if (_isDetecting) return;
+        _isDetecting = true;
 
-      try {
-        final poses = await _poseDetector.processImage(inputImage);
-        setState(() => _poses = poses);
-      } catch (e) {
-        debugPrint("Pose detection error: $e");
-      }
+        final inputImage = _cameraImageToInputImage(
+          image,
+          _controller.description,
+        );
+        if (inputImage == null) {
+          _isDetecting = false;
+          return;
+        }
 
-      _isDetecting = false;
-    });
+        try {
+          final poses = await _poseDetector.processImage(inputImage);
+          setState(() => _poses = poses);
+        } catch (e) {
+          debugPrint("Android Pose detection error: $e");
+        }
+
+        _isDetecting = false;
+      });
+    }
+
     setState(() {});
   }
 
@@ -90,7 +118,7 @@ class _LiveCameraViewState extends State<LiveCameraView> {
     CameraImage image,
     CameraDescription description,
   ) {
-    if (Platform.isIOS || image.format.group != ImageFormatGroup.yuv420) {
+    if (image.format.group != ImageFormatGroup.yuv420) {
       debugPrint('Unsupported image format: \${image.format.group}');
       return null;
     }
@@ -127,6 +155,7 @@ class _LiveCameraViewState extends State<LiveCameraView> {
   void dispose() {
     _controller.dispose();
     _poseDetector.close();
+    _iosTimer?.cancel();
     super.dispose();
   }
 
@@ -136,19 +165,46 @@ class _LiveCameraViewState extends State<LiveCameraView> {
       return Center(child: CircularProgressIndicator());
     }
 
-    return Stack(
-      children: [
-        CameraPreview(_controller),
-        CustomPaint(painter: PosePainter(_poses)),
-      ],
+    return Padding(
+      padding: const EdgeInsets.all(8.0),
+      child: Column(
+        children: [
+          Expanded(
+            child: AspectRatio(
+              aspectRatio: _controller.value.aspectRatio,
+              child: Transform(
+                alignment: Alignment.center,
+                transform: Matrix4.rotationY(math.pi),
+                child: CameraPreview(_controller),
+              ),
+            ),
+          ),
+          SizedBox(height: 8),
+          Expanded(
+            child: AspectRatio(
+              aspectRatio: _controller.value.aspectRatio,
+              child: CustomPaint(
+                painter: PosePainter(
+                  _poses,
+                  _controller.value.previewSize!,
+                  _controller.description.sensorOrientation,
+                ),
+                child: Container(),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
 
 class PosePainter extends CustomPainter {
   final List<Pose> poses;
+  final Size previewSize;
+  final int sensorOrientation;
 
-  PosePainter(this.poses);
+  PosePainter(this.poses, this.previewSize, this.sensorOrientation);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -157,13 +213,72 @@ class PosePainter extends CustomPainter {
           ..color = Colors.red
           ..strokeWidth = 4;
 
+    final textPainter = TextPainter(textDirection: TextDirection.ltr);
+    final textStyle = TextStyle(color: Colors.green, fontSize: 12);
+
+    final isRotated = sensorOrientation == 90 || sensorOrientation == 270;
+    final imageWidth = isRotated ? previewSize.height : previewSize.width;
+    final imageHeight = isRotated ? previewSize.width : previewSize.height;
+
+    final scaleX = size.width / imageWidth;
+    final scaleY = size.height / imageHeight;
+
+    final connections = [
+      [PoseLandmarkType.leftShoulder, PoseLandmarkType.leftElbow],
+      [PoseLandmarkType.leftElbow, PoseLandmarkType.leftWrist],
+      [PoseLandmarkType.rightShoulder, PoseLandmarkType.rightElbow],
+      [PoseLandmarkType.rightElbow, PoseLandmarkType.rightWrist],
+      [PoseLandmarkType.leftHip, PoseLandmarkType.leftKnee],
+      [PoseLandmarkType.leftKnee, PoseLandmarkType.leftAnkle],
+      [PoseLandmarkType.rightHip, PoseLandmarkType.rightKnee],
+      [PoseLandmarkType.rightKnee, PoseLandmarkType.rightAnkle],
+      [PoseLandmarkType.leftShoulder, PoseLandmarkType.rightShoulder],
+      [PoseLandmarkType.leftHip, PoseLandmarkType.rightHip],
+      [PoseLandmarkType.leftShoulder, PoseLandmarkType.leftHip],
+      [PoseLandmarkType.rightShoulder, PoseLandmarkType.rightHip],
+    ];
+
     for (final pose in poses) {
       final landmarks = pose.landmarks;
 
+      void drawLabel(String label, Offset offset) {
+        textPainter.text = TextSpan(text: label, style: textStyle);
+        textPainter.layout();
+        textPainter.paint(canvas, offset);
+      }
+
+      Offset transform(PoseLandmark l) {
+        double x = l.x;
+        double y = l.y;
+
+        if (isRotated) {
+          final temp = x;
+          x = y;
+          y = temp;
+        }
+
+        x = x * scaleX;
+        y = y * scaleY;
+
+        x = size.width - x;
+
+        return Offset(x, y);
+      }
+
       for (final entry in landmarks.entries) {
-        final x = entry.value.x;
-        final y = entry.value.y;
-        canvas.drawCircle(Offset(x, y), 6, paint);
+        final offset = transform(entry.value);
+        canvas.drawCircle(offset, 6, paint);
+        drawLabel(entry.key.name, offset);
+      }
+
+      for (final connection in connections) {
+        final p1 = landmarks[connection[0]];
+        final p2 = landmarks[connection[1]];
+        if (p1 != null && p2 != null) {
+          final point1 = transform(p1);
+          final point2 = transform(p2);
+          canvas.drawLine(point1, point2, paint);
+        }
       }
     }
   }
