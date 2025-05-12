@@ -6,6 +6,7 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 import 'package:flutter/foundation.dart';
+import 'package:ml_pose_app/demo.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:google_mlkit_commons/google_mlkit_commons.dart';
 import 'dart:math' as math;
@@ -27,7 +28,7 @@ class MyApp extends StatelessWidget {
           future: Permission.camera.request(),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.done) {
-              return LiveCameraView();
+              return IntroScreens();
             } else {
               return Center(child: CircularProgressIndicator());
             }
