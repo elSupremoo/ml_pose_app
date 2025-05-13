@@ -39,7 +39,11 @@ class _IntroScreensState extends State<IntroScreens> {
                 _index == 0
                     ? 'First sit on a chair with the full body visible like this and the camera directly to your side'
                     : 'Then sit like this with the camera about 45 degrees angle ',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1,
+                ),
               ),
             ),
             SizedBox(height: 24),
