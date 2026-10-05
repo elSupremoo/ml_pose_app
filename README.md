@@ -6,6 +6,7 @@ It uses Google ML Kit's pretrained pose detector (`google_mlkit_pose_detection`)
 
 ## What it does
 
+- Opens with two guided intro screens (`lib/demo.dart`) showing how to position yourself and the camera (side-on, then ~45 degrees), then starts the live view.
 - Streams frames from the front camera and runs ML Kit pose detection in stream mode.
 - Draws every detected landmark (with its name) and 12 bone connections (arms, legs, shoulders, hips, torso) on a separate canvas under the camera preview.
 - Handles the platform differences in getting frames to the model:
@@ -18,7 +19,9 @@ It uses Google ML Kit's pretrained pose detector (`google_mlkit_pose_detection`)
 
 | Path | Purpose |
 |---|---|
-| `lib/main.dart` | Everything: camera setup, frame conversion, detection loop, `PosePainter` |
+| `lib/main.dart` | Camera setup, frame conversion, detection loop, `PosePainter` |
+| `lib/demo.dart` | Intro screens that show the recommended camera/body positioning |
+| `assets/` | Example positioning images used by the intro screens |
 | `android/`, `ios/` | Platform runners |
 
 ## Running it
@@ -38,7 +41,7 @@ Grant the camera permission when prompted.
 
 ## Known limitations
 
-- Single-file prototype; no unit tests beyond the default widget test.
+- Small prototype; no unit tests beyond the default widget test.
 - The iOS capture loop is slower than the Android image stream.
 - Only the front camera is used, and no accuracy or FPS benchmarks have been measured yet.
 - Landmark labels are drawn for every point, which gets busy on screen.
